@@ -18,6 +18,7 @@
 <div id='temp_surface'></div>
 
 <script type='text/javascript'>
+
 $(document).ready(function(){
     drawLib.addBindings();
     $.ajax({
@@ -36,7 +37,21 @@ $(document).ready(function(){
     console.log(_.max(drawLib.config.clickX));
     console.log(_.min(drawLib.config.clickY));
     console.log(_.max(drawLib.config.clickY));
+
+    var surface = document.getElementById("surface");
+    var dataURL = surface.toDataURL();
+
+    $.ajax({
+      type: "POST",
+      url: "upload",
+      data: { 
+         imgBase64: dataURL
+      }
+    }).done(function(o) {
+      console.log('saved');
+    });
   });
+
   $("#clear").click(function(e){
     e.preventDefault();
 
