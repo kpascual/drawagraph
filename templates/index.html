@@ -9,111 +9,135 @@
 </pre>
 
 
-
 <button class='btn' id='recognize'>Recognize</button>
 <button class='btn' id='clear'>Clear</button>
 <br />
-<canvas id='surface' width="1500" height="1000" style='border: 1px solid gray'></canvas>
+<canvas id='surface' width="1500" height="700" style='border: 1px solid gray'></canvas>
 
-<div id='temp_surface'></div>
+<div id='temp_container'></div>
 
 <script type='text/javascript'>
-$(document).ready(function(){
-    drawLib.addBindings();
+  $(document).ready(function(){
+    var main_canvas = new drawLib($("#surface"));
+    main_canvas.addBindings();
+
+    // This proves that ajax call to the ocr endpoint works
     $.ajax({
       url: 'ocr'
     }).done(function(data){
       console.log(data);
     });
-  });
 
-  $("#recognize").click(function(e){
-    e.preventDefault();
-    console.log(drawLib.config.clickX);
-    console.log(drawLib.config.clickY);
-    console.log(drawLib.config.coords);
-    console.log(_.min(drawLib.config.clickX));
-    console.log(_.max(drawLib.config.clickX));
-    console.log(_.min(drawLib.config.clickY));
-    console.log(_.max(drawLib.config.clickY));
-  });
-  $("#clear").click(function(e){
-    e.preventDefault();
+    $("#recognize").click(function(e){
+      e.preventDefault();
+      recognize.temp(main_canvas.config.coords);
+    });
+    $("#clear").click(function(e){
+      e.preventDefault();
+      main_canvas.clearCanvas();
+    });
 
   });
 
-  var drawLib = {
-    config: {
-      canvas: $("#surface"),
-      context: $("#surface")[0].getContext("2d"),
-      clickX: [],
-      clickY: [],
-      clickDrag: [],
-      coords: [],  // item: {x: 1, y: 1, drag: true}
-      paint: false
-    },
-    addBindings: function() {
-      var that = this;
+  var recognize = {
+    temp: function(coords) {
+      var min_x = _.min(_.map(coords, function(d){return d.x}));
+      var max_x = _.max(_.map(coords, function(d){return d.x}));
+      var min_y = _.min(_.map(coords, function(d){return d.y}));
+      var max_y = _.max(_.map(coords, function(d){return d.y}));
       
-      this.config.canvas.mousedown(function(e){
-        var mouseX = e.pageX - this.offsetLeft;
-        var mouseY = e.pageY - this.offsetTop;
-          
-        that.config.paint = true;
-        that.addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop);
-        that.redraw();
-      });
-      
-      this.config.canvas.mousemove(function(e){
-        if(that.config.paint){
-          that.addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop, true);
-          that.redraw();
-        }
-      });
-      
-      this.config.canvas.mouseup(function(e){
-        that.config.paint = false;
-      });
-      
-    },
-    addClick: function(x, y, dragging)
-    {
-      this.config.clickX.push(x);
-      this.config.clickY.push(y);
-      this.config.clickDrag.push(dragging);
-      this.config.coords.push({x: x, y: y, drag: dragging})
-    },
-    redraw: function(){
-      //this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
-      
-      this.config.context.strokeStyle = "#000";
-      this.config.context.lineJoin = "round";
-      this.config.context.lineWidth = 5;
-          
-      for (var i=0; i < this.config.coords.length; i++) {    
-        this.config.context.beginPath();
-        if (this.config.coords[i].drag && i){
-          this.config.context.moveTo(this.config.coords[i-1].x, this.config.coords[i-1].y);
-        } else{
-          this.config.context.moveTo(this.config.coords[i].x-1, this.config.coords[i].y);
-        }
-        this.config.context.lineTo(this.config.coords[i].x, this.config.coords[i].y);
-        this.config.context.closePath();
-        this.config.context.stroke();
+      function makeTempCanvas(width, height) {      
+        var c = $("<canvas id='temp_surface'></canvas>");
+        c.attr('width', width);
+        c.attr('height', height);
+        $("#temp_container").append(c);
+
       }
-    },
-    drawAxes: function() {
-      var context = this.config.context;
-      
-      context.lineWidth = 5;
-      context.beginPath();
-      context.moveTo(125, 125);
-      context.lineTo(125, 700);
-      context.lineTo(700, 700);
-      context.stroke();
-    },
-    clear: function() {
-      this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
+
+      $("#temp_container").html('');
+      makeTempCanvas(max_x - min_x, max_y - min_y);
+
+      var drawobj = new drawLib($("#temp_surface"));
+      drawobj.config.coords = _.map(coords, function(d){return {x: d.x - min_x, y: d.y - min_y, drag: d.drag}});
+      drawobj.redraw();
     }
-  };
+  }
+
+  var drawLib = function(jqElement) {
+    return {
+      config: {
+        canvas: jqElement,
+        context: jqElement[0].getContext("2d"),
+        clickX: [],
+        clickY: [],
+        clickDrag: [],
+        coords: [],  // item: {x: 1, y: 1, drag: true}
+        paint: false
+      },
+      addBindings: function() {
+        var that = this;
+        
+        this.config.canvas.mousedown(function(e){
+          var mouseX = e.pageX - this.offsetLeft;
+          var mouseY = e.pageY - this.offsetTop;
+            
+          that.config.paint = true;
+          that.addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop);
+          that.redraw();
+        });
+        
+        this.config.canvas.mousemove(function(e){
+          if(that.config.paint){
+            that.addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop, true);
+            that.redraw();
+          }
+        });
+        
+        this.config.canvas.mouseup(function(e){
+          that.config.paint = false;
+        });
+        
+      },
+      addClick: function(x, y, dragging)
+      {
+        this.config.clickX.push(x);
+        this.config.clickY.push(y);
+        this.config.clickDrag.push(dragging);
+        this.config.coords.push({x: x, y: y, drag: dragging})
+      },
+      redraw: function(){
+        //this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
+        
+        this.config.context.strokeStyle = "#000";
+        this.config.context.lineJoin = "round";
+        this.config.context.lineWidth = 5;
+            
+        for (var i=0; i < this.config.coords.length; i++) {    
+          this.config.context.beginPath();
+          if (this.config.coords[i].drag && i){
+            this.config.context.moveTo(this.config.coords[i-1].x, this.config.coords[i-1].y);
+          } else{
+            this.config.context.moveTo(this.config.coords[i].x-1, this.config.coords[i].y);
+          }
+          this.config.context.lineTo(this.config.coords[i].x, this.config.coords[i].y);
+          this.config.context.closePath();
+          this.config.context.stroke();
+        }
+      },
+      drawAxes: function() {
+        var context = this.config.context;
+        
+        context.lineWidth = 5;
+        context.beginPath();
+        context.moveTo(125, 125);
+        context.lineTo(125, 700);
+        context.lineTo(700, 700);
+        context.stroke();
+      },
+      clearCanvas: function() {
+        this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
+        this.config.coords = [];
+      }
+    };
+  }
 </script>
