@@ -22,8 +22,14 @@ def upload_file():
         if imgb64 is not None and len(imgb64) > 0:
             decoded_img = base64.b64decode(imgb64)
 
-        with open('file_to_read.png', 'wb') as f1:
+        filename = 'file_to_read.png' 
+        with open(filename, 'wb') as f1:
             f1.write(decoded_img)
+
+        text = translate(filename)
+        #text = translate('ocr.png')
+        print text
+        return text
 
     if request.method == 'GET':
         return 'upload called'
@@ -32,6 +38,7 @@ def upload_file():
 def ocr():
     filename = 'ocr.png'
     image=cv.LoadImage(filename, cv.CV_LOAD_IMAGE_GRAYSCALE)
+    print image
 
     api = tesseract.TessBaseAPI()
     api.Init(".","eng",tesseract.OEM_DEFAULT)
@@ -43,5 +50,17 @@ def ocr():
     return text
 
 
+def translate(filename):
+    image=cv.LoadImage(filename, cv.CV_LOAD_IMAGE_GRAYSCALE)
+    api = tesseract.TessBaseAPI()
+    api.Init(".","eng",tesseract.OEM_DEFAULT)
+    #api.SetPageSegMode(tesseract.PSM_SINGLE_WORD)
+    api.SetPageSegMode(tesseract.PSM_AUTO)
+    tesseract.SetCvImage(image,api)
+    text=api.GetUTF8Text()
+    conf=api.MeanTextConf()
+    return text
+
+
 if __name__ == '__main__':
-    app.run()
+    app.run(host='0.0.0.0')

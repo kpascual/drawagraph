@@ -1,6 +1,10 @@
 <script src="//ajax.googleapis.com/ajax/libs/jquery/1.10.2/jquery.min.js"></script>
 <script src="//cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.2/underscore-min.js"></script>
 <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet">
+<script src='http://code.highcharts.com/stock/highstock.js'></script>
+<style type='text/css'>
+  canvas {clear: both}
+</style>
 
 <h1>Draw a Graph, bitch</h1>
 
@@ -11,56 +15,146 @@
 
 <button class='btn' id='recognize'>Recognize</button>
 <button class='btn' id='clear'>Clear</button>
+<button class='btn' id='save'>Save</button>
+<button class='btn' id='post'>Post</button>
 <br />
-<canvas id='surface' width="1500" height="700" style='border: 1px solid gray'></canvas>
+<canvas id='surface' width="1500" height="700" style='border: 1px solid gray; '></canvas>
 
 <div id='temp_container'></div>
+<div id='chart_container'></div>
 
 <script type='text/javascript'>
   $(document).ready(function(){
     var main_canvas = new drawLib($("#surface"));
-    main_canvas.addBindings();
-
-    // This proves that ajax call to the ocr endpoint works
-    $.ajax({
-      url: 'ocr'
-    }).done(function(data){
-      console.log(data);
-    });
+    main_canvas.init();
+    main_canvas.drawAxes();
+    
 
     $("#recognize").click(function(e){
       e.preventDefault();
-      recognize.temp(main_canvas.config.coords);
+      recognize.createTempCanvas(main_canvas.config.coords);
+      recognize.makeChart({chart_title: 'Chart Title, Passed'});
     });
     $("#clear").click(function(e){
       e.preventDefault();
       main_canvas.clearCanvas();
+      main_canvas.drawAxes();
+      main_canvas.drawSavedPaths();
+    });
+    $("#save").click(function(e){
+      e.preventDefault();
+      main_canvas.savePath();
+      main_canvas.clearCanvas();
+      main_canvas.drawAxes();
+      main_canvas.drawSavedPaths();
+    });
+    $("#post").click(function(e){
+      e.preventDefault();
+      postImg();
     });
 
   });
 
+
+  function postImg(data_url) {
+
+    $.ajax({
+      type: "POST",
+      url: "upload",
+      data: { 
+        imgBase64: data_url
+      }
+    }).done(function(o) {
+      $("pre").html("You wrote: '" + o.trim() + "'");
+    });
+  }
+
+  
+
   var recognize = {
-    temp: function(coords) {
+    fake_data: {
+      time_series1: [
+        [new Date('2013-10-20 00:00:00').valueOf(), 1],
+        [new Date('2013-10-20 01:00:00').valueOf(), 2],
+        [new Date('2013-10-20 02:00:00').valueOf(), 3],
+        [new Date('2013-10-20 03:00:00').valueOf(), 4],
+      ],
+      time_series2: [
+        [new Date('2013-10-20 00:00:00').valueOf(), 5],
+        [new Date('2013-10-20 01:00:00').valueOf(), 6],
+        [new Date('2013-10-20 02:00:00').valueOf(), 7],
+        [new Date('2013-10-20 03:00:00').valueOf(), 8],
+      ]
+
+    },
+    createTempCanvas: function(coords) {
+      var padding = 6;
+      var bounds = this.locate(coords);
+
+      $("#temp_container").html('');
+      this.makeTempCanvas(bounds.max_x - bounds.min_x + padding, bounds.max_y - bounds.min_y + padding);
+
+      var drawobj = new drawLib($("#temp_surface"));
+      drawobj.fillCanvas();
+      drawobj.config.coords = _.map(coords, function(d){return {x: d.x - bounds.min_x + 3, y: d.y - bounds.min_y + 3, drag: d.drag}});
+      drawobj.redraw();
+      data_url = this.makeImage($("#temp_surface"));
+      postImg(data_url);
+    },
+
+    makeTempCanvas: function(width, height) {      
+      var c = $("<canvas id='temp_surface'></canvas>");
+      c.attr('width', width);
+      c.attr('height', height);
+      $("#temp_container").append(c);
+    },
+    locate: function(coords) {
       var min_x = _.min(_.map(coords, function(d){return d.x}));
       var max_x = _.max(_.map(coords, function(d){return d.x}));
       var min_y = _.min(_.map(coords, function(d){return d.y}));
       var max_y = _.max(_.map(coords, function(d){return d.y}));
+
+      return {min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y}
+    },
+    makeImage: function(jqCanvas){
+      var data_url = jqCanvas[0].toDataURL();
+      var img = $("<img />").attr("src", jqCanvas[0].toDataURL());
+      $("#temp_container").append(img);
+
+      return data_url;
+    },
+    makeChart: function(options) {
+      var that = this;
+      var chart_options = {
+        chart: { renderTo: 'chart_container' },
+        legend: {enabled: true, align: 'right'},
+        title: {text: 'Title of the Chart'},
+        rangeSelector: { selected: 1, inputEnabled: false },
+        series: [
+          { name: 'series 1', data: that.fake_data.time_series1 },
+          { name: 'series 2', data: that.fake_data.time_series2 },
+        ]
+      };
+
+      var mapping = {
+        chart_title: function(option) {
+          chart_options.title.text = option;
+        },
+        data_series: function(option) {
+          chart_options.series.push(option);
+        }
+      };
+
+      // Update chart_options with user-specified options
+      _.each(options, function(value, index){
+        mapping[index](value);
       
-      function makeTempCanvas(width, height) {      
-        var c = $("<canvas id='temp_surface'></canvas>");
-        c.attr('width', width);
-        c.attr('height', height);
-        $("#temp_container").append(c);
-
-      }
-
-      $("#temp_container").html('');
-      makeTempCanvas(max_x - min_x, max_y - min_y);
-
-      var drawobj = new drawLib($("#temp_surface"));
-      drawobj.config.coords = _.map(coords, function(d){return {x: d.x - min_x, y: d.y - min_y, drag: d.drag}});
-      drawobj.redraw();
+      });
+      console.log(chart_options);
+      
+      new Highcharts.StockChart(chart_options);
     }
+    
   }
 
   var drawLib = function(jqElement) {
@@ -72,10 +166,12 @@
         clickY: [],
         clickDrag: [],
         coords: [],  // item: {x: 1, y: 1, drag: true}
+        saved_paths: [],
         paint: false
       },
-      addBindings: function() {
+      init: function() {
         var that = this;
+        this.fillCanvas();
         
         this.config.canvas.mousedown(function(e){
           var mouseX = e.pageX - this.offsetLeft;
@@ -98,6 +194,10 @@
         });
         
       },
+      fillCanvas: function() {
+        this.config.context.fillStyle="#ffffff";
+        this.config.context.fillRect(0, 0, 1500, 700);
+      },
       addClick: function(x, y, dragging)
       {
         this.config.clickX.push(x);
@@ -106,36 +206,49 @@
         this.config.coords.push({x: x, y: y, drag: dragging})
       },
       redraw: function(){
-        //this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
         
         this.config.context.strokeStyle = "#000";
         this.config.context.lineJoin = "round";
         this.config.context.lineWidth = 5;
             
-        for (var i=0; i < this.config.coords.length; i++) {    
+        this.draw(this.config.coords);
+      },
+      draw: function(coords) {
+        for (var i=0; i < coords.length; i++) {    
           this.config.context.beginPath();
-          if (this.config.coords[i].drag && i){
-            this.config.context.moveTo(this.config.coords[i-1].x, this.config.coords[i-1].y);
+          if (coords[i].drag && i){
+            this.config.context.moveTo(coords[i-1].x, coords[i-1].y);
           } else{
-            this.config.context.moveTo(this.config.coords[i].x-1, this.config.coords[i].y);
+            this.config.context.moveTo(coords[i].x-1, coords[i].y);
           }
-          this.config.context.lineTo(this.config.coords[i].x, this.config.coords[i].y);
+          this.config.context.lineTo(coords[i].x, coords[i].y);
           this.config.context.closePath();
           this.config.context.stroke();
         }
+
       },
       drawAxes: function() {
         var context = this.config.context;
         
         context.lineWidth = 5;
         context.beginPath();
-        context.moveTo(125, 125);
-        context.lineTo(125, 700);
-        context.lineTo(700, 700);
+        context.moveTo(150, 100);
+        context.lineTo(150, 400);
+        context.lineTo(900, 400);
         context.stroke();
       },
       clearCanvas: function() {
         this.config.context.clearRect(0, 0, this.config.context.canvas.width, this.config.context.canvas.height); // Clears the canvas
+        this.config.coords = [];
+      },
+      drawSavedPaths: function() {
+        var that = this;
+        _.each(this.config.saved_paths, function(el, index) {
+          that.draw(el);
+        });
+      },
+      savePath: function() {
+        this.config.saved_paths.push(this.config.coords);
         this.config.coords = [];
       }
     };
