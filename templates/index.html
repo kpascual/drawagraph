@@ -6,7 +6,8 @@
   body {padding: 15px}
   canvas {clear: both}
   button.btn {font-size: 30px; padding: 21px; margin-right: 60px}
-  #container, #chart_container {width: 1650px}
+  #container {padding-top: 50px;}
+  #container, #chart_container {width: 1550px}
   #notification {position:fixed; top: 0; left: 0; height: 120px; width: 100%; background-color: black; color: white; padding: 20px; font-size: 26px; display:none;}
   #notification_button {margin-left: 25px}
   #notification_button:hover {color: white; background-color: red}
@@ -33,7 +34,7 @@
   <button class='btn' id='clear' style='float:right'>Clear</button>
   <br />
   <div id='canvas_container'>
-    <canvas id='surface' width="1600" height="700" style='border: 1px solid gray; '></canvas>
+    <canvas id='surface' width="1500" height="700" style='border: 1px solid gray; '></canvas>
   </div>
 </div>
 
@@ -87,6 +88,7 @@
 
   var recognize = {
     main_canvas: {},
+    columns: ['dt','users','messages','country','mno'],
     whatAmI: function(coords) {
       $("#temp_container").html('');
       var that = this;
@@ -99,7 +101,14 @@
       var padding = 20;
       this.makeTempCanvas(bounds.max_x - bounds.min_x + padding, bounds.max_y - bounds.min_y + padding);
       this.copyPathFromMain(bounds, coords, padding);
-      //var text = this.translateWithOcr();
+
+      var guess = '';
+      var text = '';
+      //var ocr = this.translateWithOcr();
+      //if (ocr) {
+        //guess = ocr.guess;
+        //text = ocr.text;
+      }
       var text = this.translateWithOcrFake(key);
 
       // Update all the chart things
@@ -115,9 +124,7 @@
         
         chart.shouldDraw();
       };
-      notify.write("You wrote '" + text + "' for your " + key.replace('_',' '), "Nope, that's wrong", success_callback);
-
-
+      notify.write("I think you wrote '" + text + "' for your " + key.replace('_',' ') + ". Did you mean '" + guess + "'?","Nope, that's wrong", success_callback);
     },
     understandLabel: function(bounds){
       // BEWARE THIS SUCKS -- "GLOBAL" VARIABLE HERE
@@ -161,6 +168,7 @@
     translateWithOcr: function() {
       var data_url = this.makeImage($("#temp_surface"));
       var text = '';
+      var that = this;
 
       $.ajax({
         type: "POST",
@@ -173,31 +181,45 @@
         $("#notification_text").html("You wrote: '" + o.trim() + "'");
         text = o.trim();
       });
-      return text;
+      if (text == '') {
+        return {text: '', guess: ''};
+      } else {
+        return {text: text, guess: that.findBestMatch(text)};
+      }
     },
     translateWithOcrFake: function(key) {
       switch (key) {
         case 'chart_title': return 'New Users over Time'; break;
         case 'x_axis': return 'dt'; break;
-        case 'y_axis': return 'new_users'; break;
-        case 'cohort': return 'hij'; break;
+        case 'y_axis': return 'users'; break;
+        case 'cohort': return 'country'; break;
         default: 'loser'
       }
     },
+    findBestMatch: function(text) {
+      var data = [];
+
+      _.each(this.columns,function(value, index){
+        data.push({name: value,dist: levDist(value, item)});
+      });
+
+      best = _.min(data, function(d){return d.dist});
+      return best.name;
+    }
   }
 
 
   var chart = {
     real_data: [
-        {dt: new Date('2013-10-20 00:00:00').valueOf(), new_users: 5, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 01:00:00').valueOf(), new_users: 8, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 02:00:00').valueOf(), new_users: 5, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 03:00:00').valueOf(), new_users: 2, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 04:00:00').valueOf(), new_users:15, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 05:00:00').valueOf(), new_users: 3, ghi: 7, jkl: 4, mno: 1},
-        {dt: new Date('2013-10-20 06:00:00').valueOf(), new_users:19, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 00:00:00').valueOf(), users: 5, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 01:00:00').valueOf(), users: 8, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 02:00:00').valueOf(), users: 5, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 03:00:00').valueOf(), users: 2, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 04:00:00').valueOf(), users:15, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 05:00:00').valueOf(), users: 3, messages: 7, country: 4, mno: 1},
+        {dt: new Date('2013-10-20 06:00:00').valueOf(), users:19, messages: 7, country: 4, mno: 1},
     ],
-    columns: ['dt','new_users','ghi','jkl','mno'],
+    columns: ['dt','users','messages','country','mno'],
     options: {
       x: '',
       y: '',
@@ -373,4 +395,56 @@
       }
     };
   }
+
+  var levDist = function(s, t) {
+      var d = []; //2d matrix
+
+      // Step 1
+      var n = s.length;
+      var m = t.length;
+
+      if (n == 0) return m;
+      if (m == 0) return n;
+
+      //Create an array of arrays in javascript (a descending loop is quicker)
+      for (var i = n; i >= 0; i--) d[i] = [];
+
+      // Step 2
+      for (var i = n; i >= 0; i--) d[i][0] = i;
+      for (var j = m; j >= 0; j--) d[0][j] = j;
+
+      // Step 3
+      for (var i = 1; i <= n; i++) {
+          var s_i = s.charAt(i - 1);
+
+          // Step 4
+          for (var j = 1; j <= m; j++) {
+
+              //Check the jagged ld total so far
+              if (i == j && d[i][j] > 4) return n;
+
+              var t_j = t.charAt(j - 1);
+              var cost = (s_i == t_j) ? 0 : 1; // Step 5
+
+              //Calculate the minimum
+              var mi = d[i - 1][j] + 1;
+              var b = d[i][j - 1] + 1;
+              var c = d[i - 1][j - 1] + cost;
+
+              if (b < mi) mi = b;
+              if (c < mi) mi = c;
+
+              d[i][j] = mi; // Step 6
+
+              //Damerau transposition
+              if (i > 1 && j > 1 && s_i == t.charAt(j - 2) && s.charAt(i - 2) == t_j) {
+                  d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + cost);
+              }
+          }
+      }
+
+      // Step 7
+      return d[n][m];
+  }
+
 </script>
