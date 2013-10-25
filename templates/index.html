@@ -3,22 +3,39 @@
 <link href="//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css" rel="stylesheet">
 <script src='http://code.highcharts.com/stock/highstock.js'></script>
 <style type='text/css'>
+  body {padding: 15px}
   canvas {clear: both}
+  button.btn {font-size: 30px; padding: 21px; margin-right: 60px}
+  #container, #chart_container {width: 1650px}
+  #notification {position:fixed; top: 0; left: 0; height: 120px; width: 100%; background-color: black; color: white; padding: 20px; font-size: 26px; display:none;}
+  #notification_button {margin-left: 25px}
+  #notification_button:hover {color: white; background-color: red}
+  #notification_button:active {color: white; background-color: blue}
+  #notification button.btn {padding: 12px}
+  #temp_container{display:none}
 </style>
 
-<h1>Draw a Graph, bitch</h1>
+<div id='notification'>
+  <div style='padding: 0 50px'>
+    <span id='notification_text'></span>
 
-<pre>
-  {{random_text}}
-</pre>
+    <button class='btn' id='notification_button'>Nope, That's Wrong</button>
+  </div>
+</div>
+
+<a href="https://github.com/kpascual/drawagraph"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://s3.amazonaws.com/github/ribbons/forkme_right_gray_6d6d6d.png" alt="Fork me on GitHub"></a>
+
+<h1>Draw a Graph, beeyotch</h1>
 
 
-<button class='btn' id='recognize'>Recognize</button>
-<button class='btn' id='clear'>Clear</button>
-<button class='btn' id='save'>Save</button>
-<button class='btn' id='post'>Post</button>
-<br />
-<canvas id='surface' width="1500" height="700" style='border: 1px solid gray; '></canvas>
+<div id='container'>
+  <button class='btn' id='recognize'>Recognize</button>
+  <button class='btn' id='clear' style='float:right'>Clear</button>
+  <br />
+  <div id='canvas_container'>
+    <canvas id='surface' width="1600" height="700" style='border: 1px solid gray; '></canvas>
+  </div>
+</div>
 
 <div id='temp_container'></div>
 <div id='chart_container'></div>
@@ -27,94 +44,112 @@
   $(document).ready(function(){
     var main_canvas = new drawLib($("#surface"));
     main_canvas.init();
-    main_canvas.drawAxes();
+    main_canvas.drawFakeGraph();
+    recognize.main_canvas = main_canvas;
     
 
     $("#recognize").click(function(e){
       e.preventDefault();
-      recognize.createTempCanvas(main_canvas.config.coords);
-      recognize.makeChart({chart_title: 'Chart Title, Passed'});
+      recognize.whatAmI(main_canvas.config.coords);
     });
     $("#clear").click(function(e){
       e.preventDefault();
       main_canvas.clearCanvas();
-      main_canvas.drawAxes();
+      main_canvas.drawFakeGraph();
       main_canvas.drawSavedPaths();
     });
-    $("#save").click(function(e){
+    $("#notification_button").click(function(e){
       e.preventDefault();
-      main_canvas.savePath();
-      main_canvas.clearCanvas();
-      main_canvas.drawAxes();
-      main_canvas.drawSavedPaths();
-    });
-    $("#post").click(function(e){
-      e.preventDefault();
-      postImg();
+      clearTimeout(timeout);
+      notify.hide();
     });
 
   });
 
+  // FUCKING GLOBAL VARIABLES
+  var timeout = {};
 
-  function postImg(data_url) {
-
-    $.ajax({
-      type: "POST",
-      url: "upload",
-      data: { 
-        imgBase64: data_url
-      }
-    }).done(function(o) {
-      $("pre").html("You wrote: '" + o.trim() + "'");
-    });
+  var notify = {
+    show: function(){ $("#notification").slideDown(1000);},
+    hide: function(){ $("#notification").slideUp(1000);},
+    write: function(text, button_text, callback) {
+      $("#notification_button").text(button_text); 
+      $("#notification_text").text(text); 
+      return this.showTemporary(callback);
+    },
+    showTemporary: function(callback){
+      var that = this;
+      this.show();
+      timeout = setTimeout(function(){that.hide(); callback();}, 5000);
+    }
   }
-
   
 
   var recognize = {
-    fake_data: {
-      time_series1: [
-        [new Date('2013-10-20 00:00:00').valueOf(), 1],
-        [new Date('2013-10-20 01:00:00').valueOf(), 2],
-        [new Date('2013-10-20 02:00:00').valueOf(), 3],
-        [new Date('2013-10-20 03:00:00').valueOf(), 4],
-      ],
-      time_series2: [
-        [new Date('2013-10-20 00:00:00').valueOf(), 5],
-        [new Date('2013-10-20 01:00:00').valueOf(), 6],
-        [new Date('2013-10-20 02:00:00').valueOf(), 7],
-        [new Date('2013-10-20 03:00:00').valueOf(), 8],
-      ]
+    main_canvas: {},
+    whatAmI: function(coords) {
+      $("#temp_container").html('');
+      var that = this;
+
+      // Understand text's location
+      var bounds = this.locateDrawing(coords);
+      var key = this.understandLabel(bounds);
+
+      // Execute OCR to determine actual text
+      var padding = 20;
+      this.makeTempCanvas(bounds.max_x - bounds.min_x + padding, bounds.max_y - bounds.min_y + padding);
+      this.copyPathFromMain(bounds, coords, padding);
+      //var text = this.translateWithOcr();
+      var text = this.translateWithOcrFake(key);
+
+      // Update all the chart things
+      var user_input = {};
+      user_input[key] = text;
+      chart.update(user_input);
+
+      var success_callback = function() {
+        that.main_canvas.savePath();
+        that.main_canvas.clearCanvas();
+        that.main_canvas.drawFakeGraph();
+        that.main_canvas.drawSavedPaths();
+        
+        chart.shouldDraw();
+      };
+      notify.write("You wrote '" + text + "' for your " + key.replace('_',' '), "Nope, that's wrong", success_callback);
+
 
     },
-    createTempCanvas: function(coords) {
-      var padding = 6;
-      var bounds = this.locate(coords);
-
-      $("#temp_container").html('');
-      this.makeTempCanvas(bounds.max_x - bounds.min_x + padding, bounds.max_y - bounds.min_y + padding);
-
+    understandLabel: function(bounds){
+      // BEWARE THIS SUCKS -- "GLOBAL" VARIABLE HERE
+      if (bounds.max_y < this.main_canvas.config.axis_top) {
+        return 'chart_title';
+      } else if (bounds.min_x < this.main_canvas.config.axis_left) {
+        return 'y_axis';
+      } else if (bounds.min_y > this.main_canvas.config.axis_bottom) {
+        return 'x_axis'; 
+      } else if (bounds.min_x > this.main_canvas.config.axis_left && bounds.min_y > this.main_canvas.config.axis_top && bounds.max_y < this.main_canvas.config.axis_bottom) {
+        return 'cohort';
+      }
+    },
+    copyPathFromMain: function(bounds, coords, padding) {
       var drawobj = new drawLib($("#temp_surface"));
       drawobj.fillCanvas();
-      drawobj.config.coords = _.map(coords, function(d){return {x: d.x - bounds.min_x + 3, y: d.y - bounds.min_y + 3, drag: d.drag}});
+      drawobj.config.coords = _.map(coords, function(d){return {x: d.x - bounds.min_x + padding/2, y: d.y - bounds.min_y + padding/2, drag: d.drag}});
       drawobj.redraw();
-      data_url = this.makeImage($("#temp_surface"));
-      postImg(data_url);
     },
-
     makeTempCanvas: function(width, height) {      
       var c = $("<canvas id='temp_surface'></canvas>");
       c.attr('width', width);
       c.attr('height', height);
       $("#temp_container").append(c);
     },
-    locate: function(coords) {
+    locateDrawing: function(coords) {
       var min_x = _.min(_.map(coords, function(d){return d.x}));
       var max_x = _.max(_.map(coords, function(d){return d.x}));
       var min_y = _.min(_.map(coords, function(d){return d.y}));
       var max_y = _.max(_.map(coords, function(d){return d.y}));
 
-      return {min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y}
+      return {min_x: min_x, max_x: max_x, min_y: min_y, max_y: max_y};
     },
     makeImage: function(jqCanvas){
       var data_url = jqCanvas[0].toDataURL();
@@ -123,25 +158,79 @@
 
       return data_url;
     },
-    makeChart: function(options) {
-      var that = this;
-      var chart_options = {
+    translateWithOcr: function() {
+      var data_url = this.makeImage($("#temp_surface"));
+      var text = '';
+
+      $.ajax({
+        type: "POST",
+        url: "upload",
+        data: { 
+          imgBase64: data_url
+        }
+      }).done(function(o) {
+        notify.show();
+        $("#notification_text").html("You wrote: '" + o.trim() + "'");
+        text = o.trim();
+      });
+      return text;
+    },
+    translateWithOcrFake: function(key) {
+      switch (key) {
+        case 'chart_title': return 'New Users over Time'; break;
+        case 'x_axis': return 'dt'; break;
+        case 'y_axis': return 'new_users'; break;
+        case 'cohort': return 'hij'; break;
+        default: 'loser'
+      }
+    },
+  }
+
+
+  var chart = {
+    real_data: [
+        {dt: new Date('2013-10-20 00:00:00').valueOf(), new_users: 5, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 01:00:00').valueOf(), new_users: 8, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 02:00:00').valueOf(), new_users: 5, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 03:00:00').valueOf(), new_users: 2, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 04:00:00').valueOf(), new_users:15, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 05:00:00').valueOf(), new_users: 3, ghi: 7, jkl: 4, mno: 1},
+        {dt: new Date('2013-10-20 06:00:00').valueOf(), new_users:19, ghi: 7, jkl: 4, mno: 1},
+    ],
+    columns: ['dt','new_users','ghi','jkl','mno'],
+    options: {
+      x: '',
+      y: '',
+      data: {},
+      highchart_options: {
         chart: { renderTo: 'chart_container' },
         legend: {enabled: true, align: 'right'},
         title: {text: 'Title of the Chart'},
+        scrollbar: {enabled: false},
+        navigator: {enabled: false},
         rangeSelector: { selected: 1, inputEnabled: false },
         series: [
-          { name: 'series 1', data: that.fake_data.time_series1 },
-          { name: 'series 2', data: that.fake_data.time_series2 },
-        ]
-      };
+          //{ name: 'series 1', data: that.fake_data.time_series1 },
+          //{ name: 'series 2', data: that.fake_data.time_series2 },
+        ],
+      }
+    },
+    update: function(options) {
+      var that = this;
 
       var mapping = {
         chart_title: function(option) {
-          chart_options.title.text = option;
+          that.options.highchart_options.title.text = option;
         },
-        data_series: function(option) {
-          chart_options.series.push(option);
+        x_axis: function(option) {
+          if ($.inArray(option, that.columns) > -1) {
+            that.options.x = option;
+          }
+        },
+        y_axis: function(option) {
+          if ($.inArray(option, that.columns) > -1) {
+            that.options.y = option;
+          }
         }
       };
 
@@ -150,12 +239,24 @@
         mapping[index](value);
       
       });
-      console.log(chart_options);
-      
-      new Highcharts.StockChart(chart_options);
+    },
+    shouldDraw: function() {
+      if (this.options.x != '' && this.options.y != '') {
+        var x_key = this.options.x;
+        var y_key = this.options.y;
+        
+        this.options.highchart_options.series = [{name: y_key, data: _.map(this.real_data, function(d){return [d[x_key], d[y_key]]})}];
+        this.draw();
+        notify.write("Here's your chart", "Scroll down", function(){});
+      }
+    },
+    draw: function(){
+        new Highcharts.StockChart(this.options.highchart_options);
     }
-    
+
+
   }
+
 
   var drawLib = function(jqElement) {
     return {
@@ -167,7 +268,11 @@
         clickDrag: [],
         coords: [],  // item: {x: 1, y: 1, drag: true}
         saved_paths: [],
-        paint: false
+        paint: false,
+        axis_top: 200,
+        axis_left: 300,
+        axis_bottom: 500,
+        axis_right: 1200
       },
       init: function() {
         var that = this;
@@ -207,13 +312,16 @@
       },
       redraw: function(){
         
-        this.config.context.strokeStyle = "#000";
+        var stroke_color = "#000";
+        stroke_color = "#f00";
+            
+        this.draw(this.config.coords, stroke_color);
+      },
+      draw: function(coords, color) {
         this.config.context.lineJoin = "round";
         this.config.context.lineWidth = 5;
-            
-        this.draw(this.config.coords);
-      },
-      draw: function(coords) {
+        this.config.context.strokeStyle = color;
+
         for (var i=0; i < coords.length; i++) {    
           this.config.context.beginPath();
           if (coords[i].drag && i){
@@ -227,14 +335,26 @@
         }
 
       },
-      drawAxes: function() {
+      drawFakeGraph: function() {
         var context = this.config.context;
         
         context.lineWidth = 5;
+        context.strokeStyle = '#000';
+  
+        // Axes
         context.beginPath();
-        context.moveTo(150, 100);
-        context.lineTo(150, 400);
-        context.lineTo(900, 400);
+        context.moveTo(this.config.axis_left, this.config.axis_top);
+        context.lineTo(this.config.axis_left, this.config.axis_bottom);
+        context.lineTo(this.config.axis_right, this.config.axis_bottom);
+        context.stroke();
+
+        // Fake line chart
+        context.strokeStyle = '#777';
+        context.beginPath();
+        context.moveTo(this.config.axis_left, this.config.axis_bottom);
+        context.lineTo(this.config.axis_right/3, this.config.axis_top + (this.config.axis_bottom - this.config.axis_top)/2);
+        context.lineTo(this.config.axis_right/2, this.config.axis_top + (this.config.axis_bottom - this.config.axis_top)/4);
+        context.lineTo(this.config.axis_right/1, this.config.axis_top + (this.config.axis_bottom - this.config.axis_top)/8);
         context.stroke();
       },
       clearCanvas: function() {
@@ -244,7 +364,7 @@
       drawSavedPaths: function() {
         var that = this;
         _.each(this.config.saved_paths, function(el, index) {
-          that.draw(el);
+          that.draw(el, '#000');
         });
       },
       savePath: function() {
